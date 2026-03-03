@@ -27,7 +27,6 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { PRIORITY_1_TOOLS, handlePriority1Tools } from './tools.js';
 import { setupResourceHandlers } from './resources.js';
 import { GodotLSPClient, createLSPTools, handleLSPTool } from './lsp_client.js';
 import { GodotDAPClient, createDAPTools, handleDAPTool } from './dap_client.js';
@@ -142,6 +141,7 @@ class GodotServer {
     'project_path': 'projectPath',
     'scene_path': 'scenePath',
     'root_node_type': 'rootNodeType',
+    'root_type': 'rootNodeType',
     'parent_node_path': 'parentNodePath',
     'node_type': 'nodeType',
     'node_name': 'nodeName',
@@ -761,8 +761,8 @@ class GodotServer {
         let normalizedKey = key;
         
         // If the key is in snake_case, convert it to camelCase using our mapping
-        if (key.includes('_') && this.parameterMappings[key]) {
-          normalizedKey = this.parameterMappings[key];
+        if (key.includes('_')) {
+          normalizedKey = this.parameterMappings[key] || key.replace(/_([a-zA-Z0-9])/g, (_, letter: string) => letter.toUpperCase());
         }
         
         // Handle nested objects recursively
@@ -1010,8 +1010,7 @@ class GodotServer {
     });
 
     // Define available tools
-    this.server.setRequestHandler(ListToolsRequestSchema, async (request) => {
-      const allTools: MCPToolDefinition[] = [
+    const buildToolDefinitions = (): MCPToolDefinition[] => [
         {
           name: 'launch_editor',
           description: 'Opens the Godot editor GUI for a project. Use when visual inspection or manual editing of scenes/scripts is needed. Opens a new window on the host system. Requires: project directory with project.godot file.',
@@ -3260,6 +3259,10 @@ class GodotServer {
         ...createDAPTools(),
       ];
 
+    this.cachedToolDefinitions = buildToolDefinitions();
+
+    this.server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+      const allTools = buildToolDefinitions();
       this.cachedToolDefinitions = allTools;
 
       const exposedTools = this.getExposedTools(allTools);
@@ -3317,30 +3320,30 @@ class GodotServer {
         case 'tool_catalog':
           return await this.handleToolCatalog(request.params.arguments);
         case 'create_scene':
-          return await this.handleViaBridge('create_scene', request.params.arguments);
+          return await this.handleViaBridge('create_scene', normalizedArgs);
         case 'add_node':
-          return await this.handleViaBridge('add_node', request.params.arguments);
+          return await this.handleViaBridge('add_node', normalizedArgs);
         case 'load_sprite':
-          return await this.handleViaBridge('load_sprite', request.params.arguments);
+          return await this.handleViaBridge('load_sprite', normalizedArgs);
         case 'save_scene':
-          return await this.handleViaBridge('save_scene', request.params.arguments);
+          return await this.handleViaBridge('save_scene', normalizedArgs);
         case 'get_uid':
           return await this.handleGetUid(request.params.arguments);
         case 'update_project_uids':
           return await this.handleUpdateProjectUids(request.params.arguments);
         // Phase 1: Scene Operations handlers
         case 'list_scene_nodes':
-          return await this.handleViaBridge('list_scene_nodes', request.params.arguments);
+          return await this.handleViaBridge('list_scene_nodes', normalizedArgs);
         case 'get_node_properties':
-          return await this.handleViaBridge('get_node_properties', request.params.arguments);
+          return await this.handleViaBridge('get_node_properties', normalizedArgs);
         case 'set_node_properties':
-          return await this.handleViaBridge('set_node_properties', request.params.arguments);
+          return await this.handleViaBridge('set_node_properties', normalizedArgs);
         case 'delete_node':
-          return await this.handleViaBridge('delete_node', request.params.arguments);
+          return await this.handleViaBridge('delete_node', normalizedArgs);
         case 'duplicate_node':
-          return await this.handleViaBridge('duplicate_node', request.params.arguments);
+          return await this.handleViaBridge('duplicate_node', normalizedArgs);
         case 'reparent_node':
-          return await this.handleViaBridge('reparent_node', request.params.arguments);
+          return await this.handleViaBridge('reparent_node', normalizedArgs);
         // Phase 2: Import/Export Pipeline handlers
         case 'get_import_status':
           return await this.handleGetImportStatus(request.params.arguments);
@@ -3380,11 +3383,11 @@ class GodotServer {
           return await this.handleSetMainScene(request.params.arguments);
         // Signal Management handlers
         case 'connect_signal':
-          return await this.handleViaBridge('connect_signal', request.params.arguments);
+          return await this.handleViaBridge('connect_signal', normalizedArgs);
         case 'disconnect_signal':
-          return await this.handleViaBridge('disconnect_signal', request.params.arguments);
+          return await this.handleViaBridge('disconnect_signal', normalizedArgs);
         case 'list_connections':
-          return await this.handleViaBridge('list_connections', request.params.arguments);
+          return await this.handleViaBridge('list_connections', normalizedArgs);
         // Phase 4: Runtime Tools handlers
         case 'get_runtime_status':
           return await this.handleGetRuntimeStatus(request.params.arguments);
@@ -3398,11 +3401,11 @@ class GodotServer {
           return await this.handleGetRuntimeMetrics(request.params.arguments);
         // Resource Creation Tools handlers
         case 'create_resource':
-          return await this.handleViaBridge('create_resource', request.params.arguments);
+          return await this.handleViaBridge('create_resource', normalizedArgs);
         case 'create_material':
-          return await this.handleViaBridge('create_material', request.params.arguments);
+          return await this.handleViaBridge('create_material', normalizedArgs);
         case 'create_shader':
-          return await this.handleViaBridge('create_shader', request.params.arguments);
+          return await this.handleViaBridge('create_shader', normalizedArgs);
         // GDScript File Operations handlers
         case 'create_script':
           return await this.handleCreateScript(request.params.arguments);
@@ -3412,9 +3415,9 @@ class GodotServer {
           return await this.handleGetScriptInfo(request.params.arguments);
         // Animation Tools handlers
         case 'create_animation':
-          return await this.handleViaBridge('create_animation', request.params.arguments);
+          return await this.handleViaBridge('create_animation', normalizedArgs);
         case 'add_animation_track':
-          return await this.handleViaBridge('add_animation_track', request.params.arguments);
+          return await this.handleViaBridge('add_animation_track', normalizedArgs);
         // Plugin Management handlers
         case 'list_plugins':
           return await this.handleListPlugins(request.params.arguments);
@@ -3430,9 +3433,9 @@ class GodotServer {
           return await this.handleSearchProject(request.params.arguments);
         // 2D Tile Tools handlers
         case 'create_tileset':
-          return await this.handleViaBridge('create_tileset', request.params.arguments);
+          return await this.handleViaBridge('create_tileset', normalizedArgs);
         case 'set_tilemap_cells':
-          return await this.handleViaBridge('set_tilemap_cells', request.params.arguments);
+          return await this.handleViaBridge('set_tilemap_cells', normalizedArgs);
         // Audio System Tools handlers
         case 'create_audio_bus':
           return await this.handleCreateAudioBus(request.params.arguments);
@@ -3446,24 +3449,24 @@ class GodotServer {
         // Physics Tools handlers
         // Navigation Tools handlers
         case 'create_navigation_region':
-          return await this.handleViaBridge('create_navigation_region', request.params.arguments);
+          return await this.handleViaBridge('create_navigation_region', normalizedArgs);
         case 'create_navigation_agent':
-          return await this.handleViaBridge('create_navigation_agent', request.params.arguments);
+          return await this.handleViaBridge('create_navigation_agent', normalizedArgs);
         // Rendering Tools handlers
         // Animation Tree Tools handlers
         case 'create_animation_tree':
-          return await this.handleViaBridge('create_animation_tree', request.params.arguments);
+          return await this.handleViaBridge('create_animation_tree', normalizedArgs);
         case 'add_animation_state':
-          return await this.handleViaBridge('add_animation_state', request.params.arguments);
+          return await this.handleViaBridge('add_animation_state', normalizedArgs);
         case 'connect_animation_states':
-          return await this.handleViaBridge('connect_animation_states', request.params.arguments);
+          return await this.handleViaBridge('connect_animation_states', normalizedArgs);
         // UI/Theme Tools handlers
         case 'set_theme_color':
-          return await this.handleViaBridge('set_theme_color', request.params.arguments);
+          return await this.handleViaBridge('set_theme_color', normalizedArgs);
         case 'set_theme_font_size':
-          return await this.handleViaBridge('set_theme_font_size', request.params.arguments);
+          return await this.handleViaBridge('set_theme_font_size', normalizedArgs);
         case 'apply_theme_shader':
-          return await this.handleViaBridge('apply_theme_shader', request.params.arguments);
+          return await this.handleViaBridge('apply_theme_shader', normalizedArgs);
         case 'search_assets':
           return await this.handleSearchAssets(request.params.arguments);
         case 'fetch_asset':
@@ -3479,7 +3482,7 @@ class GodotServer {
           return await this.handleInspectInheritance(request.params.arguments);
         // Resource Modification Tool
         case 'modify_resource':
-          return await this.handleViaBridge('modify_resource', request.params.arguments);
+          return await this.handleViaBridge('modify_resource', normalizedArgs);
         // Editor Plugin Bridge Status
         case 'get_editor_status':
           return { content: [{ type: 'text', text: JSON.stringify(this.godotBridge.getStatus(), null, 2) }] };
@@ -3733,7 +3736,8 @@ class GodotServer {
       };
     }
     try {
-      const result = await this.godotBridge.invokeTool(toolName, args);
+      const normalizedArgs = this.normalizeParameters((args || {}) as OperationParams);
+      const result = await this.godotBridge.invokeTool(toolName, normalizedArgs as Record<string, unknown>);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     } catch (error) {
       return {
