@@ -53,15 +53,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HaD0Yun/godot-mcp.git"
+    "url": "https://github.com/hidalgob/godot-mcp.git"
   },
-  "homepage": "https://github.com/HaD0Yun/godot-mcp#readme",
+  "homepage": "https://github.com/hidalgob/godot-mcp#readme",
   "bugs": {
-    "url": "https://github.com/HaD0Yun/godot-mcp/issues"
+    "url": "https://github.com/hidalgob/godot-mcp/issues"
   },
   "author": {
-    "name": "HaD0Yun",
-    "url": "https://github.com/HaD0Yun"
+    "name": "hidalgob",
+    "url": "https://github.com/hidalgob"
   },
   "funding": {
     "type": "github",

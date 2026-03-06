@@ -119,6 +119,8 @@ interface BridgeStatus {
   queuedResources: number;
 }
 
+const PORT_SCAN_RANGE = 10; // Try up to 10 ports above the configured port
+
 export class GodotBridge extends EventEmitter {
   private httpServer: http.Server | null = null;
   private godotWss: WebSocketServer | null = null;
@@ -129,6 +131,7 @@ export class GodotBridge extends EventEmitter {
   private pendingRequests = new Map<string, PendingRequest>();
   private resourceQueues = new Map<string, Promise<void>>();
   private visualizerHtml = this.getDefaultVisualizerHtml();
+  private boundPort: number;
 
   public constructor(
     private readonly port: number = DEFAULT_PORT,
@@ -136,6 +139,7 @@ export class GodotBridge extends EventEmitter {
     private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
   ) {
     super();
+    this.boundPort = port;
   }
 
   public start(): Promise<void> {
@@ -143,6 +147,10 @@ export class GodotBridge extends EventEmitter {
       return Promise.resolve();
     }
 
+    return this.tryStartOnPort(this.port, PORT_SCAN_RANGE);
+  }
+
+  private tryStartOnPort(port: number, attemptsLeft: number): Promise<void> {
     return new Promise((resolve, reject) => {
       const server = http.createServer((req, res) => {
         this.handleHttpRequest(req, res);
@@ -169,14 +177,27 @@ export class GodotBridge extends EventEmitter {
         this.httpServer = server;
         this.godotWss = godotWss;
         this.vizWss = vizWss;
-        this.log('info', `Unified HTTP+WS bridge listening on ${this.host}:${this.port}`);
+        this.boundPort = port;
+        if (port !== this.port) {
+          this.log('warn', `Configured port ${this.port} was in use. Bridge listening on fallback port ${port}. Update GODOT_BRIDGE_PORT or restart Godot editor plugin with port ${port}.`);
+        } else {
+          this.log('info', `Unified HTTP+WS bridge listening on ${this.host}:${port}`);
+        }
         resolve();
       });
 
-      server.once('error', (error) => {
+      server.once('error', (error: NodeJS.ErrnoException) => {
         if (!settled) {
           settled = true;
-          reject(error);
+          if (error.code === 'EADDRINUSE' && attemptsLeft > 1) {
+            // Port in use — try the next one
+            server.removeAllListeners();
+            godotWss.removeAllListeners();
+            vizWss.removeAllListeners();
+            this.tryStartOnPort(port + 1, attemptsLeft - 1).then(resolve, reject);
+          } else {
+            reject(error);
+          }
           return;
         }
 
@@ -191,7 +212,7 @@ export class GodotBridge extends EventEmitter {
         this.log('error', `Visualizer WebSocket server error: ${error.message}`);
       });
 
-      server.listen(this.port, this.host);
+      server.listen(port, this.host);
     });
   }
 
@@ -253,7 +274,7 @@ export class GodotBridge extends EventEmitter {
   public getStatus(): BridgeStatus {
     return {
       host: this.host,
-      port: this.port,
+      port: this.boundPort,
       connected: this.isConnected(),
       projectPath: this.connectionInfo?.projectPath,
       connectedAt: this.connectionInfo?.connectedAt,
